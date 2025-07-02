@@ -1,0 +1,163 @@
+import time
+import random
+import simpy
+import simulus
+import statistics
+import multiprocessing
+import os
+import psutil
+
+# Simulation settings
+NUM_TASKS = 159999  # Total tasks to process
+NUM_SMs = 8  # Number of processing units
+NUM_SIMULATORS = min(multiprocessing.cpu_count(), 8)  # Number of parallel simulators
+TASKS_PER_SIM = NUM_TASKS // NUM_SIMULATORS  # Tasks per simulator
+SMs_PER_SIM = max(1, NUM_SMs // NUM_SIMULATORS)  # Processing units per simulator
+
+# Generate tasks with random durations
+def generate_tasks(seed):
+    random.seed(seed)
+    return [(i, random.uniform(1, 10)) for i in range(NUM_TASKS)]
+
+# SimPy simulation: single-process task processing
+def run_simpy(seed, tasks):
+    print("\n--- SimPy Simulation ---")
+    start_time = time.time()
+    env = simpy.Environment()
+    task_store = simpy.Store(env, capacity=NUM_TASKS)  # Task queue
+    event_count = [0]  # Track events
+    gen_done = [False]  # Flag for task generation completion
+
+    # Generate tasks and add to queue
+    def task_generator(env):
+        for task_id, duration in tasks:
+            if duration <= 0:
+                print(f"[{env.now:.2f}] Warning: Invalid duration for Task {task_id}")
+                continue
+            yield task_store.put((task_id, duration))
+            event_count[0] += 1
+            if task_id < 10:
+                print(f"[{env.now:.2f}] Task {task_id} generated (duration {duration:.2f})")
+            yield env.timeout(0.01)  # Small delay between tasks
+            event_count[0] += 1
+        gen_done[0] = True
+        print(f"[{env.now:.2f}] Task generation complete")
+
+    # Process tasks on a simulated processing unit
+    def processing_element(env, sm_id):
+        while not gen_done[0] or task_store.items:
+            task = yield task_store.get()
+            event_count[0] += 1
+            task_id, duration = task
+            if task_id < 100:
+                print(f"[{env.now:.2f}] SM{sm_id} starts Task {task_id} (duration {duration:.2f})")
+            yield env.timeout(duration)  # Simulate task processing
+            event_count[0] += 1
+            if task_id < 10:
+                print(f"[{env.now:.2f}] SM{sm_id} finishes Task {task_id}")
+
+    env.process(task_generator(env))
+    for i in range(NUM_SMs):
+        env.process(processing_element(env, i))  # Start processing units
+    env.run()
+
+    sim_time = env.now
+    wall_time = time.time() - start_time
+    print(f"\n✅ SimPy: Simulation time = {sim_time:.2f}s, Wall time = {wall_time:.4f}s, Events = {event_count[0]}")
+    return wall_time, sim_time, len(task_store.items)
+
+# Simulus simulation: parallel task processing
+def run_single_simulator(args):
+    sim_idx, seed, tasks, start, end, num_sMs = args
+    sim = simulus.simulator(f'sim{sim_idx}')
+    task_queue = []  # Task queue
+    gen_done = [False]  # Flag for task generation completion
+    task_sem = sim.semaphore(0)  # Semaphore for task signaling
+    event_count = [0]  # Track events
+    tasks_processed = [0]  # Track processed tasks
+
+    # Pin process to a CPU core
+    try:
+        core = sim_idx % psutil.cpu_count()
+        psutil.Process().cpu_affinity([core])
+        print(f"[SIM-{sim_idx}] Running on CPU core: {core} (PID: {os.getpid()})")
+    except Exception as e:
+        print(f"[SIM-{sim_idx}] Failed to set CPU affinity: {e}")
+
+    # Generate tasks for this simulator
+    def task_generator():
+        print(f"[SIM-{sim_idx}] Generating tasks {start} to {min(end, len(tasks))-1}")
+        for j in range(start, min(end, len(tasks))):
+            task_id, duration = tasks[j]
+            if duration <= 0:
+                print(f"[{sim.now:.2f}] Warning: Invalid duration for Task {task_id}")
+                continue
+            task_queue.append((task_id, duration))
+            task_sem.signal()
+            event_count[0] += 1
+            if task_id < 10 or task_id >= NUM_TASKS - 10:
+                print(f"[{sim.now:.2f}] Task {task_id} generated (duration {duration:.2f})")
+            sim.sleep(0.01)  # Small delay between tasks
+            event_count[0] += 1
+        gen_done[0] = True
+        for _ in range(num_sMs):
+            task_sem.signal()  # Signal processing units to exit
+
+    # Process tasks on a simulated processing unit
+    def processing_element(sm_id):
+        while not gen_done[0] or task_queue:
+            task_sem.wait()
+            if task_queue:
+                task_id, duration = task_queue.pop(0)
+                if task_id < 10 or task_id >= NUM_TASKS - 10:
+                    print(f"[{sim.now:.2f}] SM{sm_id} starts Task {task_id} (duration {duration:.2f})")
+                sim.sleep(duration)  # Simulate task processing
+                event_count[0] += 1
+                tasks_processed[0] += 1
+                if task_id < 10 or task_id >= NUM_TASKS - 10:
+                    print(f"[{sim.now:.2f}] SM{sm_id} finishes Task {task_id}")
+                task_sem.signal()  # Signal for next task
+            elif gen_done[0]:
+                break
+
+    sim.process(task_generator)
+    for k in range(num_sMs):
+        sim.process(lambda k=k: processing_element(k))  # Start processing units
+    sim.run()
+
+    print(f"[SIM-{sim_idx}] Completed, processed {tasks_processed[0]} tasks, {event_count[0]} events")
+    return sim.now, event_count[0], len(task_queue)
+
+# Run Simulus with multiple simulators
+def run_simulus(seed, tasks):
+    print("\n--- Simulus Simulation ---")
+    start_time = time.time()
+    print(f"Starting {NUM_SIMULATORS} simulators, {TASKS_PER_SIM} tasks each")
+    
+    with multiprocessing.Pool(processes=NUM_SIMULATORS) as pool:
+        args = [(i, seed, tasks, i * TASKS_PER_SIM, (i + 1) * TASKS_PER_SIM, SMs_PER_SIM)
+                for i in range(NUM_SIMULATORS)]
+        results = pool.map(run_single_simulator, args)
+
+    sim_time = max(result[0] for result in results)
+    event_count = sum(result[1] for result in results)
+    queue_length = sum(result[2] for result in results)
+    wall_time = time.time() - start_time
+
+    print(f"\n✅ Simulus: Simulation time = {sim_time:.2f}s, Wall time = {wall_time:.4f}s, Events = {event_count}")
+    return wall_time, sim_time, queue_length
+
+# Main execution
+if __name__ == "__main__":
+    SEED = 42
+    tasks = generate_tasks(SEED)
+    
+    # Run simulations and collect results
+    simpy_wall_time, simpy_sim_time, simpy_queue = run_simpy(SEED, tasks)
+    simulus_wall_time, simulus_sim_time, simulus_queue = run_simulus(SEED, tasks)
+
+    # Print summary
+    print(f"\nSummary:")
+    print(f"SimPy: Wall time = {simpy_wall_time:.4f}s, Simulation time = {simpy_sim_time:.2f}s, Tasks remaining: {simpy_queue}")
+    print(f"Simulus: Wall time = {simulus_wall_time:.4f}s, Simulation time = {simulus_sim_time:.2f}s, Tasks remaining: {simulus_queue}")
+    print(f"Speedup (SimPy/Simulus): {simpy_wall_time / simulus_wall_time:.2f}x")
