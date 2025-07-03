@@ -1,0 +1,44 @@
+
+| **Category**               | **Similarity**                                                                 | **SimPy Syntax/Example**                              | **Simulus Syntax/Example**                           |
+|----------------------------|-------------------------------------------------------------------------------|------------------------------------------------------|-----------------------------------------------------|
+| **Process Definition**     | Both use Python generator functions to define simulation processes.           | `def process(env): yield env.timeout(1)`             | `def process(sim): yield sim.sleep(1)`              |
+| **Discrete-Event Simulation** | Both are process-oriented, discrete-event simulation libraries in Python.      | `env = simpy.Environment(); env.run(until=10)`       | `sim = simulus.Simulator(); sim.run(until=10)`      |
+| **Resource Modeling**      | Both provide resources for modeling queues or servers with limited capacity.   | `res = simpy.Resource(env, capacity=1)`              | `res = simulus.Resource(sim, capacity=1)`           |
+| **Store for Queues**       | Both have a `Store` for modeling producer-consumer queues with capacity limits.| `store = simpy.Store(env, capacity=3)`               | `store = simulus.Store(sim, capacity=3)`            |
+| **Quantity-Based Resources** | Both support resources for modeling levels (e.g., gas in a tank).            | `cont = simpy.Container(env, capacity=10, init=5)`   | `bucket = simulus.Bucket(sim, capacity=10, init=5)` |
+| **Simulation Time Advance** | Both advance simulation time based on events or timeouts/sleeps.              | `yield env.timeout(1)`                               | `yield sim.sleep(1)`                                |
+| **Process Creation**       | Both create processes within a simulation environment/simulator.              | `env.process(process(env))`                          | `sim.process(process(sim))`                         |
+| **Producer-Consumer Pattern** | Both support producer-consumer models using stores or equivalent resources.   | `yield store.put(1); yield store.get()`              | `yield store.put(1); yield store.get()`             |
+
+
+
+## Table 1: General Comparison
+
+| **Feature**              | **SimPy**                              | **Simulus**                           |
+|--------------------------|----------------------------------------|---------------------------------------|
+| **Multi-process support** | Single-threaded event loop            | Supports multi-process and parallel simulation |
+| **Real-time simulation**  | Supported, syncs with wall clock time | Planned for v1.3, not yet available   |
+| **Inter-process communication** | Indirect, via shared resources        | Direct, via `Mailbox`                 |
+| **Resources**            | `Resource`, `Container`, `Store`      | `Resource`, `Store`, `Bucket`, `Mailbox` |
+| **Synchronization**      | Via shared resources and events       | Via resources, stores, buckets, mailboxes with conditional waits |
+
+## Table 2: Detailed Feature Comparison
+
+| **Aspect**               | **SimPy**                              | **Simulus**                           |
+|--------------------------|----------------------------------------|---------------------------------------|
+| **Process definition**   | Python generator functions            | Python generator functions            |
+| **Simulation time**      | Managed by `Environment`, advances via `env.timeout(1)` | Managed by `Simulator`, advances via `sim.sleep(10)` |
+| **Wall clock time sync** | Supported, documented in real-time guides | Planned for v1.3, currently unavailable |
+| **Inter-process communication** | Indirect via `Store`, `Resource`, no direct messaging | Direct via `Mailbox` with `send()`, `recv()`, supports delays |
+| **Synchronization**      | Implicit via resource availability (e.g., `request()`) | Explicit via `Resource` (trappable), `Store`/`Bucket`, `Mailbox` with conditional waits |
+
+
+
+
+
+| **SimPy Limitation**                              | **Simulus Solution**                                                                 | **How Simulus Achieves It**                                                                                     | **Simulus Syntax/Example**                                   |
+|--------------------------------------------------|-------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------|
+| **Single-threaded execution**                    | Supports multi-process and parallel simulation, enabling distributed simulations.    | Uses a parallel simulation engine with MPI support, allowing multiple processes or simulators to run concurrently. | `sim = simulus.Simulator(); sim.process(process(sim))` in multiple simulators with MPI. |
+| **No direct inter-process communication**        | Provides direct message passing via `Mailbox`.                                      | Implements `Mailbox` for sending/receiving messages with optional delays, enabling direct process interaction.    | `mbox = simulus.Mailbox(sim); mbox.send('msg', delay=1)`    |
+| **Limited synchronization flexibility**           | Offers explicit synchronization with conditional waits and trappable resources.      | Uses `wait()` for conditional waits on resources, stores, buckets, and mailboxes, providing finer control.       | `yield sim.wait(mbox.receiver(), until=10)`                 |
+| **Basic resource types**                         | Adds `Bucket` and `Mailbox` alongside `Resource` and `Store` for more flexibility.   | `Bucket` for uncountable quantities and `Mailbox` for message-based communication expand modeling capabilities.   | `bucket = simulus.Bucket(sim, capacity=10); mbox = simulus.Mailbox(sim)` |
