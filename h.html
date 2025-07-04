@@ -1,0 +1,327 @@
+Here's a simple explanation of how communication among simulators works in Simulus, especially when they’re part of a parallel/distributed simulation:
+🧩 Why Multiple Simulators?
+
+Simulus allows you to run multiple simulators (think of them as isolated simulation environments), each modeling a different part of a larger system.
+
+Example: Simulating a computer
+
+    Simulator A: CPU core
+
+    Simulator B: Memory
+
+    Simulator C: Disk
+
+    Simulator D: Network card
+
+Each of these simulators may run on a different core, thread, or even machine, and they need to communicate to simulate real-world interaction.
+📬 How Do Simulators Communicate?
+
+They use Mailboxes.
+📨 What is a Mailbox in Simulus?
+
+    A mailbox is like a message drop-box.
+
+    Messages can be:
+
+        Sent with a delay (e.g., "arrive after 5 simulation units")
+
+        Stored in a specific partition (like folders in a mailbox)
+
+        Retrieved later by another process
+
+Each simulator has named mailboxes that other simulators can send messages to.
+🔗 Cross-Simulator Messaging
+
+    Simulator A can send a message to Simulator B’s mailbox, even if they’re running on different machines.
+
+    Simulus handles the message transfer using pickle, which converts Python objects into a transmittable format (and back).
+
+    The message must be pickle-able, meaning it should be a regular Python object (like numbers, strings, lists, etc.).
+
+📦 Message Example
+
+msg = {"data": "load finished", "time": sim.now}
+
+This message can be sent from Simulator A to Simulator B using a mailbox.
+⏳ Why Use Delays?
+
+    In simulations, timing matters.
+
+    If something takes 10 simulated units to reach another component, you use:
+
+mailbox.send(partition=0, msg=msg, delay=10)
+
+Then the message will arrive at the mailbox 10 units later in simulation time.
+🔐 Summary Table
+Feature	Description
+Mailbox	A communication channel between processes/simulators
+Partition	Subdivision inside a mailbox (like folders for organizing msgs)
+Delayed Send	Messages can be scheduled to arrive in the future (sim time)
+Pickle Requirement	Messages must be Python-serializable
+Cross-process / Cross-machine	Yes, works across processes and even distributed systems
+✅ Final Summary (In Plain Words)
+
+Simulus lets multiple simulators model parts of a system. They send messages to each other through mailboxes, which can store any Python object (as long as it can be "pickled"). These messages can arrive after a simulated delay, helping synchronize events across the whole system — even if simulators are running on different CPUs or machines.
+
+Let me know if you'd like a visual diagram or example code of two simulators communicating.
+------------------------------------
+Here's a clear explanation of how parallel simulation on shared-memory multiprocessors works in Simulus, broken down into simple concepts:
+🧠 What is Parallel Simulation?
+
+Instead of running one simulator (or simulation environment) sequentially on one CPU core, Simulus can run many simulators at the same time on multiple cores or CPUs — this is called parallel simulation.
+💻 What Are Shared-Memory Multiprocessors?
+
+    Most modern computers (desktops, laptops, servers) have multiple CPU cores.
+
+    These cores share access to the same memory, so they're called shared-memory multiprocessors.
+
+    Example: A laptop with 2 cores and hyper-threading may appear to have 4 logical processors.
+
+⚙️ How Does Simulus Use This?
+✅ Step 1: Enable Parallel Execution
+
+To run simulations in parallel, you set:
+
+enable_smp=True
+
+when creating a synchronized group of simulators.
+
+This tells Simulus:
+➡️ “Use all available cores to run each simulator in its own process.”
+🧠 What Happens Internally:
+
+    Simulus forks new processes (like running separate Python programs).
+
+    Each process runs one or more simulators, depending on how many simulators and processors you have.
+
+📊 How Are Simulators Assigned?
+Scenario	What Happens
+More processors than simulators	Each simulator gets its own process on a separate processor
+Fewer processors than simulators	Simulators are grouped and shared among available processors
+Equal number of simulators and processors	Perfect 1:1 match — maximum parallelism
+
+Simulus uses a block decomposition strategy, meaning:
+
+    Simulator 0–3 → Processor 0
+
+    Simulator 4–7 → Processor 1
+
+    etc.
+
+🏓 Example: Ping-Pong
+
+    You can have 2 simulators ping-ponging messages.
+
+    Run with enable_smp=True.
+
+    Simulus assigns one simulator per core.
+
+    Each prints its output separately (so output order might look "jumbled" in the terminal).
+
+    But within each simulator, the printed events remain ordered.
+
+🔁 Example: Ring of 15 Simulators
+
+    Each simulator receives a "hello" from its neighbor and passes it on.
+
+    You can run this with:
+
+sim.sync(enable_smp=True, smp_ways=4, show_runtime_report=True)
+
+Simulus will:
+
+    Evenly spread 15 simulators across the 4 cores.
+
+    Group neighbors together when possible.
+
+    At the end, print a performance report showing:
+
+        Which simulator ran on which process
+
+        How long each one took
+
+🛠 Controlling Number of Cores (smp_ways)
+
+You can override the default core usage like this:
+
+sim.sync(enable_smp=True, smp_ways=2)
+
+This tells Simulus to use only 2 processor cores, even if more are available.
+🧾 Summary
+Feature	Description
+enable_smp=True	Enables parallel simulation
+smp_ways	Limits number of processes used
+Automatic assignment	Simulators are split across processes based on core availability
+Output ordering	Output from different simulators may mix, but each simulator’s events stay ordered
+Performance report	Shows how simulators were distributed and their execution stats
+✅ Why Use This?
+
+    Speed: Handle large simulations faster by using all CPU cores.
+
+    Scalability: Simulate complex systems like CPUs, networks, etc.
+
+    Modularity: Split your simulation into components that run independently.
+
+Let me know if you’d like an annotated example or visual diagram showing how this works!
+
+----------------
+🌍 Why Use Distributed Simulation?
+
+Running parallel simulations only on one computer has major limitations:
+Limitation	Why it’s a problem
+🔢 Limited CPUs	You can’t use more than the number of cores your machine has (e.g., 4 or 8). So your speedup is limited.
+🧠 Limited Memory	One machine has limited RAM. Large simulations (e.g., entire datacenters or networks) need more memory than one machine can provide.
+🔌 Clusters are common	Many simulations today are run on clusters (lots of connected computers), not just one machine.
+
+➡️ Distributed simulation solves these by spreading work across many machines.
+🚀 What Simulus Does
+
+Simulus supports distributed simulation across many machines by using a technology called MPI — the Message Passing Interface.
+🔧 What is MPI?
+
+    MPI is a standard way for programs running on different computers (or cores) to send messages to each other.
+
+    Used mostly in scientific computing.
+
+    Think of it like a post office: your simulation can send timestamped messages between parts running on different machines.
+
+🐍 What is MPI4Py?
+
+    MPI4Py is a Python wrapper around MPI.
+
+    Simulus uses MPI4Py behind the scenes to do the communication.
+
+✅ Good news:
+You don’t need to write MPI code — Simulus handles it for you.
+But you do need to install:
+
+python -m pip install --user mpi4py
+
+(MPI must be installed first, e.g., OpenMPI or MPICH)
+🧠 Parallel Model Used: SPMD
+
+Simulus follows a programming model called SPMD (Single Program Multiple Data):
+Concept	Meaning
+Single Program	All machines run the same Python file
+Multiple Data	Each machine (or core) handles different simulation components (e.g., one handles CPU, another handles memory, others handle I/O, etc.)
+Each simulation instance (simulator):
+
+    Runs as an MPI process
+
+    Has a rank (e.g., 0, 1, 2, …) — like an ID
+
+    Can have its own set of simulation tasks
+
+    Can send messages to other ranks
+
+📨 Communication Between Simulators
+
+    Simulus uses mailboxes to send messages between simulators.
+
+    Messages are:
+
+        Timestamped
+
+        Pickle-able Python objects (so they can be serialized between machines)
+
+    This allows modeling true distributed systems, where different simulators act like separate devices (CPU, RAM, network interface, etc.).
+
+🖥️ Shared Memory + Distributed Combined
+
+Simulus also allows hybrid setups:
+
+    Distributed via MPI across machines
+
+    Parallel via multi-core on each machine
+
+So:
+
+    Each machine runs multiple simulators
+
+    Each simulator uses parallelism (via enable_smp=True)
+
+    Simulators across machines communicate via MPI
+
+📌 How to Use It in Code
+
+To find out the rank of each simulator and how many are running:
+
+from simulus import sync
+
+rank = sync.comm_rank()
+total = sync.comm_size()
+print(f"I am simulator {rank} of {total}")
+
+Each rank can do different simulation logic — e.g., simulator 0 models the CPU, simulator 1 models RAM, etc.
+🧾 Summary
+Feature	Description
+MPI	Technology used for inter-machine communication
+MPI4Py	Python binding used by Simulus (you install it, Simulus uses it)
+SPMD	All simulators run same code, handle different parts
+Mailboxes	How Simulus sends timestamped messages between simulators
+Hybrid Parallelism	Combine shared-memory and distributed memory execution
+Want a visual diagram or full cluster example script next?
+You said:
+how do you define multiple machines ? like 2 computers in two different locations ?
+ChatGPT said:
+
+Great question. When we talk about "multiple machines" in the context of Simulus and distributed simulation using MPI, we mean two or more physically distinct computers (or servers) that are connected together via a network — typically on the same local network or cluster, but technically it can be computers in different geographic locations too.
+🔌 How Are Multiple Machines Defined?
+✅ Basic Setup:
+
+To define multiple machines for a distributed simulation:
+
+    You have at least 2 computers (e.g., comp1 and comp2).
+
+    These computers must:
+
+        Have MPI installed (e.g., OpenMPI).
+
+        Have Python + mpi4py + simulus installed.
+
+        Be able to communicate over SSH (passwordless login is preferred for clusters).
+
+        Access the same Python script, typically via:
+
+            A shared file system (e.g., NFS), or
+
+            Copying the script manually to each machine.
+
+🌐 Can the Machines Be in Different Locations?
+
+Technically yes, but practically no unless you’re advanced:
+Aspect	Explanation
+🌎 Remote computers	It’s possible to simulate between computers in different locations (e.g., one in LA, one in NYC), but:
+🔐 Requires secure networking	You'd need VPN or SSH tunnels and open MPI ports, which is complex and risky
+🕒 Latency is a problem	Real-time performance will degrade due to internet delays
+🛠 Clusters are preferred	In practice, simulations are run on HPC clusters or LAN-connected nodes
+🛠️ Example: Run Simulus on Two Machines
+Suppose:
+
+    comp1 has IP 192.168.1.10
+
+    comp2 has IP 192.168.1.11
+
+    Install OpenMPI and mpi4py on both:
+
+sudo apt install openmpi-bin
+pip install mpi4py simulus
+
+Create a hostfile:
+
+comp1 slots=2
+comp2 slots=2
+
+Run from one of the machines:
+
+    mpirun -np 4 --hostfile my_hosts.txt python your_sim.py
+
+This will launch 4 MPI processes, 2 on each machine.
+📦 Recap
+Concept	Means
+Machine	A physical or virtual computer
+Multiple Machines	Two or more computers on a network
+Defined via	MPI hostfile or MPI launch config
+Location	Same LAN or secure VPN cluster preferred
+Connection	SSH and open network ports
+Execution	mpirun or mpiexec launches the script across all machines
