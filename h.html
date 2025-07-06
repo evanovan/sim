@@ -65,11 +65,16 @@ Simulus lets multiple simulators model parts of a system. They send messages to 
 
 Let me know if you'd like a visual diagram or example code of two simulators communicating.
 ------------------------------------
+To take advantage of parallel simulation, we need to set enable_smp to be True when we create the synchronized group.  In that case, simulus will automatically fork separate processes to run the simulators in the group. By default, simulus will use as many processes as the number of “processors” (four on my laptop) to run the simulators. If there are more simulators in the synchronized group than the processors, simulus tries to evenly divide the simulators among the processors, in which case each processor may run multiple simulators. If the number of simulators is less than the number of processors, each simulator will run as a separate process and each process will run on a different processor.
+umber of SMP processes used for parallel simulation by setting the smp_ways parameter when creating the synchronized group
+
+------------
 Here's a clear explanation of how parallel simulation on shared-memory multiprocessors works in Simulus, broken down into simple concepts:
 🧠 What is Parallel Simulation?
 
 Instead of running one simulator (or simulation environment) sequentially on one CPU core, Simulus can run many simulators at the same time on multiple cores or CPUs — this is called parallel simulation.
 💻 What Are Shared-Memory Multiprocessors?
+
 
     Most modern computers (desktops, laptops, servers) have multiple CPU cores.
 
@@ -194,7 +199,7 @@ Simulus supports distributed simulation across many machines by using a technolo
 ✅ Good news:
 You don’t need to write MPI code — Simulus handles it for you.
 But you do need to install:
-
+MPI4Py (or MPI for Python) provides a Python interface for MPI
 python -m pip install --user mpi4py
 
 (MPI must be installed first, e.g., OpenMPI or MPICH)
@@ -260,68 +265,5 @@ MPI4Py	Python binding used by Simulus (you install it, Simulus uses it)
 SPMD	All simulators run same code, handle different parts
 Mailboxes	How Simulus sends timestamped messages between simulators
 Hybrid Parallelism	Combine shared-memory and distributed memory execution
-Want a visual diagram or full cluster example script next?
-You said:
-how do you define multiple machines ? like 2 computers in two different locations ?
-ChatGPT said:
 
-Great question. When we talk about "multiple machines" in the context of Simulus and distributed simulation using MPI, we mean two or more physically distinct computers (or servers) that are connected together via a network — typically on the same local network or cluster, but technically it can be computers in different geographic locations too.
-🔌 How Are Multiple Machines Defined?
-✅ Basic Setup:
 
-To define multiple machines for a distributed simulation:
-
-    You have at least 2 computers (e.g., comp1 and comp2).
-
-    These computers must:
-
-        Have MPI installed (e.g., OpenMPI).
-
-        Have Python + mpi4py + simulus installed.
-
-        Be able to communicate over SSH (passwordless login is preferred for clusters).
-
-        Access the same Python script, typically via:
-
-            A shared file system (e.g., NFS), or
-
-            Copying the script manually to each machine.
-
-🌐 Can the Machines Be in Different Locations?
-
-Technically yes, but practically no unless you’re advanced:
-Aspect	Explanation
-🌎 Remote computers	It’s possible to simulate between computers in different locations (e.g., one in LA, one in NYC), but:
-🔐 Requires secure networking	You'd need VPN or SSH tunnels and open MPI ports, which is complex and risky
-🕒 Latency is a problem	Real-time performance will degrade due to internet delays
-🛠 Clusters are preferred	In practice, simulations are run on HPC clusters or LAN-connected nodes
-🛠️ Example: Run Simulus on Two Machines
-Suppose:
-
-    comp1 has IP 192.168.1.10
-
-    comp2 has IP 192.168.1.11
-
-    Install OpenMPI and mpi4py on both:
-
-sudo apt install openmpi-bin
-pip install mpi4py simulus
-
-Create a hostfile:
-
-comp1 slots=2
-comp2 slots=2
-
-Run from one of the machines:
-
-    mpirun -np 4 --hostfile my_hosts.txt python your_sim.py
-
-This will launch 4 MPI processes, 2 on each machine.
-📦 Recap
-Concept	Means
-Machine	A physical or virtual computer
-Multiple Machines	Two or more computers on a network
-Defined via	MPI hostfile or MPI launch config
-Location	Same LAN or secure VPN cluster preferred
-Connection	SSH and open network ports
-Execution	mpirun or mpiexec launches the script across all machines
